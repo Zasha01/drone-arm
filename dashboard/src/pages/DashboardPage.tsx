@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useGlobalStore } from "@/lib/hooks";
 import { fetchWithBaseUrl, fetcher } from "@/lib/utils";
-import type { ServerStatus } from "@/types";
+import type { ServerStatus, DepthMeasurement } from "@/types";
 // @ts-ignore
 import { AlertCircle, Play, Settings, Square, Video } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -64,6 +64,16 @@ export default function DashboardPage() {
   );
 
   const connectedRobots = serverStatus?.robot_status || [];
+
+  // Add depth measurement polling
+  const { data: depthMeasurement } = useSWR<DepthMeasurement>(
+    ["/depth/measurement"],
+    fetcher,
+    {
+      refreshInterval: 100, // Poll every 100ms for smooth updates
+      revalidateOnFocus: true,
+    }
+  );
 
   // Set default leader and follower when robots are connected
   useEffect(() => {
@@ -209,6 +219,23 @@ export default function DashboardPage() {
                 <div className="flex justify-between items-center">
                   <Label>Battery:</Label>
                   <span>78%</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <Label>Distance:</Label>
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {depthMeasurement ? (
+                        <>
+                          {(depthMeasurement.distance / 1000).toFixed(2)}m
+                          <span className="text-xs text-gray-500 ml-1">
+                            ({Math.round(depthMeasurement.confidence * 100)}% confidence)
+                          </span>
+                        </>
+                      ) : (
+                        "N/A"
+                      )}
+                    </span>
+                  </div>
                 </div>
               </div>
 

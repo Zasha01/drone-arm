@@ -700,22 +700,38 @@ try:
         def get_depth_frame(
             self, resize: tuple[int, int] | None = None
         ) -> Optional[cv2.typing.MatLike]:
-            # To get the depth frame, also get the couple (video, depth) frame from the wait_for_frames method
-            # The method get_depth and get_rgb_frame can be called simultaneously without lagging (tested)
-            # One should load them together for recording to be sure that the depth and video frame are coherent
-
+            """
+            Get the depth frame from the RealSense camera.
+            Returns None if the frame could not be read.
+            """
             if not self.is_active:
                 logger.warning(f"{self.camera_name} is not active")
                 return None
-            last_bgr_depth_frame = self.pipeline.wait_for_frames().get_depth_frame()
-            if last_bgr_depth_frame is None:
-                logger.warning(f"{self.camera_name} Failed to grab frame")
+
+            try:
+                # Wait for a coherent pair of frames: depth and color
+                frames = self.pipeline.wait_for_frames(timeout_ms=100)
+                depth_frame = frames.get_depth_frame()
+                
+                if depth_frame is None:
+                    logger.warning(f"{self.camera_name} Failed to grab depth frame")
+                    return None
+
+                # Convert to numpy array
+                depth_image = np.asanyarray(depth_frame.get_data())
+                
+                # Log frame information
+                logger.debug(f"Raw depth frame shape: {depth_image.shape}")
+                logger.debug(f"Depth range: {np.min(depth_image)} - {np.max(depth_image)} mm")
+                
+                if resize is not None:
+                    depth_image = cv2.resize(depth_image, resize, interpolation=cv2.INTER_NEAREST)
+                    
+                return depth_image
+
+            except Exception as e:
+                logger.error(f"Error getting depth frame: {str(e)}")
                 return None
-            np_bgr_depth_frame = np.asanyarray(last_bgr_depth_frame.get_data())
-            frame = cv2.cvtColor(np_bgr_depth_frame, cv2.COLOR_BGR2RGB)
-            if resize is not None:
-                frame = cv2.resize(frame, resize, interpolation=cv2.INTER_AREA)
-            return frame
 
         def stop(self) -> None:
             if self.is_active:

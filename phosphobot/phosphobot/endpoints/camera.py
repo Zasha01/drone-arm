@@ -8,19 +8,31 @@ from fastapi import (
     HTTPException,
     Request,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from loguru import logger
 from ultralytics import YOLO
+import os
+from pathlib import Path
 
 from phosphobot.camera import AllCameras, get_all_cameras
 
 router = APIRouter(tags=["camera"])
 
 # Initialize YOLO model
-yolo_model = YOLO('yolov8n.pt')
-yolo_model.conf = 0.5
-yolo_model.iou = 0.45
-yolo_model.max_det = 10
+MODEL_PATH = str(Path(__file__).parent.parent.parent / 'inference' / 'yolo' / 'best.pt')
+if not os.path.exists(MODEL_PATH):
+    logger.warning(f"Custom model {MODEL_PATH} not found, falling back to yolov8n.pt")
+    MODEL_PATH = 'yolov8n.pt'
+
+try:
+    yolo_model = YOLO(MODEL_PATH)
+    yolo_model.conf = 0.5  # Confidence threshold
+    yolo_model.iou = 0.45  # NMS IoU threshold
+    yolo_model.max_det = 10  # Maximum number of detections
+    logger.info(f"Loaded YOLO model from {MODEL_PATH}")
+except Exception as e:
+    logger.error(f"Failed to load YOLO model: {str(e)}")
+    raise RuntimeError(f"Failed to initialize YOLO model: {str(e)}")
 
 def process_frame(frame: np.ndarray) -> tuple[np.ndarray, list[dict]]:
     """Process frame with YOLO detection."""
@@ -231,3 +243,68 @@ async def get_all_camera_frames(
         raise HTTPException(status_code=503, detail="No camera frames available")
 
     return response
+
+@router.get(
+    "/depth/measurement",
+    response_class=JSONResponse,
+    description="Get depth measurements from the RealSense camera.",
+    responses={
+        200: {"description": "Depth measurements in millimeters"},
+        404: {"description": "RealSense camera not available"},
+    },
+)
+def get_depth_measurement(
+    cameras: AllCameras = Depends(get_all_cameras),
+) -> Dict[str, float]:
+    """
+    Get depth measurements from the RealSense camera.
+    Returns the average depth in the center region of the frame.
+    """
+    camera = cameras.get_realsense_camera()
+    if camera is None:
+        raise HTTPException(status_code=404, detail="RealSense camera not available")
+
+    try:
+        # Get depth frame
+        depth_frame = camera.get_depth_frame()
+        if depth_frame is None:
+            raise HTTPException(status_code=404, detail="Failed to get depth frame")
+
+        # Get center region (20% of frame size)
+        height, width = depth_frame.shape[:2]
+        center_y = height // 2
+        center_x = width // 2
+        region_size = min(width, height) // 5
+
+        # Extract center region
+        center_region = depth_frame[
+            center_y - region_size//2:center_y + region_size//2,
+            center_x - region_size//2:center_x + region_size//2
+        ]
+
+        # Calculate average depth (excluding zeros/invalid values)
+        valid_depths = center_region[center_region > 0]
+        if len(valid_depths) == 0:
+            logger.warning("No valid depth measurements in center region")
+            return {"distance": 0.0, "confidence": 0.0}
+
+        avg_depth = float(np.mean(valid_depths))
+        confidence = float(len(valid_depths) / center_region.size)
+
+        # Log detailed information about the depth measurement
+        logger.debug(f"Depth frame shape: {depth_frame.shape}")
+        logger.debug(f"Center region shape: {center_region.shape}")
+        logger.debug(f"Number of valid depth measurements: {len(valid_depths)}")
+        logger.debug(f"Average depth: {avg_depth:.2f}mm")
+        logger.debug(f"Confidence: {confidence:.2%}")
+        logger.debug(f"Min depth: {np.min(valid_depths):.2f}mm")
+        logger.debug(f"Max depth: {np.max(valid_depths):.2f}mm")
+
+        return {
+            "distance": avg_depth,  # in millimeters
+            "confidence": confidence
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting depth measurement: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

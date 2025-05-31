@@ -46,6 +46,7 @@ export type ServerStatus = {
   ai_running_status: "stopped" | "running" | "paused" | "waiting";
   leader_follower_status: boolean;
   server_ip: string;
+  depth_measurement?: DepthMeasurement;
 };
 
 export type AdminTokenSettings = {
@@ -123,3 +124,8 @@ export type AIStatusResponse = {
   id?: string;
   status: "waiting" | "running" | "stopped" | "paused";
 };
+
+export interface DepthMeasurement {
+  distance: number;  // in millimeters
+  confidence: number;
+}
