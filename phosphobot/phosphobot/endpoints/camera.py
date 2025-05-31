@@ -1,7 +1,7 @@
 import base64
 from typing import Dict, Optional
-
 import cv2
+import numpy as np
 from fastapi import (
     APIRouter,
     Depends,
@@ -10,16 +10,51 @@ from fastapi import (
 )
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from ultralytics import YOLO
 
 from phosphobot.camera import AllCameras, get_all_cameras
 
 router = APIRouter(tags=["camera"])
 
+# Initialize YOLO model
+yolo_model = YOLO('yolov8n.pt')
+yolo_model.conf = 0.5
+yolo_model.iou = 0.45
+yolo_model.max_det = 10
+
+def process_frame(frame: np.ndarray) -> tuple[np.ndarray, list[dict]]:
+    """Process frame with YOLO detection."""
+    try:
+        # Run YOLO detection
+        results = yolo_model(frame, verbose=False)[0]
+        
+        # Process detections
+        detections = []
+        for r in results.boxes.data.tolist():
+            x1, y1, x2, y2, score, class_id = r
+            class_name = results.names[int(class_id)]
+            
+            detections.append({
+                'class': class_name,
+                'confidence': float(score),
+                'bbox': [float(x1), float(y1), float(x2), float(y2)]
+            })
+            
+            # Draw bounding box and label
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            label = f"{class_name}: {score:.2f}"
+            cv2.putText(frame, label, (int(x1), int(y1) - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        
+        return frame, detections
+    except Exception as e:
+        logger.error(f"Error in YOLO detection: {str(e)}")
+        return frame, []
 
 @router.get(
     "/video/{camera_id}",
     response_class=StreamingResponse,
-    description="Stream video feed of the specified camera. "
+    description="Stream video feed of the specified camera with YOLO object detection. "
     + "If no camera id is provided, the default camera is used. "
     + "If the camera id is 'realsense' or 'depth', the realsense camera is used."
     + "Specify a target size and quality using query parameters.",
@@ -34,15 +69,17 @@ def video_feed_for_camera(
     height: int | None = None,
     width: int | None = None,
     quality: int | None = None,
+    enable_detection: bool = True,
     cameras: AllCameras = Depends(get_all_cameras),
 ):
     """
-    Stream video feed of the specified camera.
+    Stream video feed of the specified camera with optional YOLO object detection.
 
     Parameters:
     - camera_id (int | str | None): ID of the camera to stream. If None, the default camera is used.
     - target_size (tuple[int, int] | None): Target size of the video feed. Default is None.
     - quality (int | None): Quality of the video feed. Default is None.
+    - enable_detection (bool): Whether to enable YOLO object detection. Default is True.
     """
 
     if width is None or height is None:
@@ -76,41 +113,57 @@ def video_feed_for_camera(
         "quality": quality,
     }
 
-    if isinstance(camera_id, int):
-        camera = cameras.get_camera_by_id(camera_id)
-        if camera is None or not camera.is_active:
-            raise HTTPException(status_code=404, detail="Camera not available")
-        logger.info(f"Starting video feed with params {stream_params}")
-        return StreamingResponse(
-            camera.generate_rgb_frames(
-                target_size=target_size, quality=quality, request=request
-            ),
-            media_type="multipart/x-mixed-replace; boundary=frame",
-        )
+    async def generate_frames():
+        try:
+            while True:
+                if request.client is None:
+                    break
 
-    elif isinstance(camera_id, str):
-        """
-        Stream video feed from realsense camera.
-        """
-        if camera_id not in ["realsense", "depth"]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Camera {camera_id} not implemented. Use an integer or 'realsense' or 'depth'.",
-            )
-        # camera is always None at this point so we can safely ignore the type check
-        camera = cameras.get_realsense_camera()  # type: ignore
-        if camera is None:
-            raise HTTPException(status_code=404, detail="Camera not available")
-        logger.info(f"Starting video feed with params {stream_params}")
-        return StreamingResponse(
-            camera.generate_rgb_frames(
-                is_video_frame=(camera_id == "realsense"),
-                target_size=target_size,
-                quality=quality,
-                request=request,
-            ),
-            media_type="multipart/x-mixed-replace; boundary=frame",
-        )
+                # Get frame from camera
+                if isinstance(camera_id, int):
+                    camera = cameras.get_camera_by_id(camera_id)
+                    if camera is None or not camera.is_active:
+                        raise HTTPException(status_code=404, detail="Camera not available")
+                    frame = camera.get_rgb_frame(resize=target_size)
+                else:
+                    if camera_id not in ["realsense", "depth"]:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Camera {camera_id} not implemented. Use an integer or 'realsense' or 'depth'.",
+                        )
+                    camera = cameras.get_realsense_camera()
+                    if camera is None:
+                        raise HTTPException(status_code=404, detail="Camera not available")
+                    frame = camera.get_rgb_frame(resize=target_size) if camera_id == "realsense" else camera.get_depth_frame(resize=target_size)
+
+                if frame is None:
+                    continue
+
+                # Convert RGB to BGR for OpenCV
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                # Process frame with YOLO if enabled
+                if enable_detection:
+                    frame, _ = process_frame(frame)
+
+                # Convert back to RGB for streaming
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Encode frame
+                _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality if quality else 80])
+                frame_bytes = buffer.tobytes()
+
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+        except Exception as e:
+            logger.error(f"Error in video stream: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    return StreamingResponse(
+        generate_frames(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 
 @router.get(
