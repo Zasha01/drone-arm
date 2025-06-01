@@ -226,10 +226,16 @@ export default function DashboardPage() {
                     <span>
                       {depthMeasurement ? (
                         <>
-                          {(depthMeasurement.distance / 1000).toFixed(2)}m
-                          <span className="text-xs text-gray-500 ml-1">
-                            ({Math.round(depthMeasurement.confidence * 100)}% confidence)
-                          </span>
+                          {depthMeasurement.confidence > 0.1 ? (
+                            <>
+                              {depthMeasurement.distance.toFixed(2)}m
+                              <span className="text-xs text-gray-500 ml-1">
+                                ({Math.round(depthMeasurement.confidence * 100)}% confidence)
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-yellow-500">Low confidence</span>
+                          )}
                         </>
                       ) : (
                         "N/A"

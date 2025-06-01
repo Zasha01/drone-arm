@@ -249,7 +249,7 @@ async def get_all_camera_frames(
     response_class=JSONResponse,
     description="Get depth measurements from the RealSense camera.",
     responses={
-        200: {"description": "Depth measurements in millimeters"},
+        200: {"description": "Depth measurements in meters"},
         404: {"description": "RealSense camera not available"},
     },
 )
@@ -288,20 +288,39 @@ def get_depth_measurement(
             logger.warning("No valid depth measurements in center region")
             return {"distance": 0.0, "confidence": 0.0}
 
+        # Calculate statistics
         avg_depth = float(np.mean(valid_depths))
-        confidence = float(len(valid_depths) / center_region.size)
-
+        min_depth = float(np.min(valid_depths))
+        max_depth = float(np.max(valid_depths))
+        
+        # Calculate confidence based on:
+        # 1. Percentage of valid measurements
+        # 2. Consistency of measurements (std dev)
+        # 3. Reasonable depth range
+        valid_ratio = float(len(valid_depths) / center_region.size)
+        std_dev = float(np.std(valid_depths))
+        depth_range = max_depth - min_depth
+        
+        # Combine factors for confidence
+        confidence = valid_ratio * (1.0 - min(1.0, std_dev / avg_depth if avg_depth > 0 else 1.0))
+        
         # Log detailed information about the depth measurement
         logger.debug(f"Depth frame shape: {depth_frame.shape}")
         logger.debug(f"Center region shape: {center_region.shape}")
         logger.debug(f"Number of valid depth measurements: {len(valid_depths)}")
-        logger.debug(f"Average depth: {avg_depth:.2f}mm")
-        logger.debug(f"Confidence: {confidence:.2%}")
-        logger.debug(f"Min depth: {np.min(valid_depths):.2f}mm")
-        logger.debug(f"Max depth: {np.max(valid_depths):.2f}mm")
+        logger.debug(f"Average depth: {avg_depth:.3f}m")
+        logger.debug(f"Min depth: {min_depth:.3f}m")
+        logger.debug(f"Max depth: {max_depth:.3f}m")
+        logger.debug(f"Standard deviation: {std_dev:.3f}m")
+        logger.debug(f"Confidence: {confidence:.1%}")
+
+        # Check if the depth values are reasonable
+        if avg_depth < 0.1 or avg_depth > 10.0:  # Less than 10cm or more than 10m
+            logger.warning(f"Unreasonable depth value detected: {avg_depth:.3f}m")
+            return {"distance": 0.0, "confidence": 0.0}
 
         return {
-            "distance": avg_depth,  # in millimeters
+            "distance": avg_depth,  # in meters
             "confidence": confidence
         }
 

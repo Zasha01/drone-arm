@@ -717,12 +717,19 @@ try:
                     logger.warning(f"{self.camera_name} Failed to grab depth frame")
                     return None
 
-                # Convert to numpy array
+                # Get depth sensor
+                depth_sensor = self.pipeline.get_active_profile().get_device().first_depth_sensor()
+                
+                # Get depth scale
+                depth_scale = depth_sensor.get_depth_scale()
+                
+                # Convert to numpy array and apply depth scale
                 depth_image = np.asanyarray(depth_frame.get_data())
+                depth_image = depth_image * depth_scale  # Convert to meters
                 
                 # Log frame information
                 logger.debug(f"Raw depth frame shape: {depth_image.shape}")
-                logger.debug(f"Depth range: {np.min(depth_image)} - {np.max(depth_image)} mm")
+                logger.debug(f"Depth range: {np.min(depth_image):.3f} - {np.max(depth_image):.3f} m")
                 
                 if resize is not None:
                     depth_image = cv2.resize(depth_image, resize, interpolation=cv2.INTER_NEAREST)
