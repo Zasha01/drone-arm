@@ -74,8 +74,6 @@ We welcome contributions! Some ways you can contribute:
 
 ## Support
 
-- **Documentation**: Check the [documentation](docs/)
-- **Community Support**: Join our [Discord server](https://discord.gg/cbkggY6NSK)
 - **Issues**: Submit problems or suggestions through [GitHub Issues](https://github.com/your-username/drone-arm/issues)
 
 ## License
