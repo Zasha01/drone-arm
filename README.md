@@ -1,4 +1,4 @@
-# Drone-Arm Teleoperation System
+# Drone-Arm Teleoperation System: Project ANGEL
 
 This project is a modified version of the [phosphobot](https://github.com/phospho-app/phosphobot) and [LeRobot](https://github.com/lerobot/lerobot) platforms, adapted for teleoperating robot arms mounted on FPV drones.
 
