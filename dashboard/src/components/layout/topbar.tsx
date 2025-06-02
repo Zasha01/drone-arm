@@ -166,14 +166,14 @@ export function TopBar() {
       {currentPath === "/" && (
         <div className="flex-1">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-green-500">
-            phosphobot
+            ANGEL
           </h1>
         </div>
       )}
       {currentPath !== "/" && (
         <div className="flex-1">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-green-500">
-            {matchedRoute?.title ?? "phosphobot"}
+            {matchedRoute?.title ?? "ANGEL"}
           </h1>
         </div>
       )}

@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { ChartContainer } from "@/components/ui/chart";
 import { Line, LineChart, ResponsiveContainer, YAxis } from "recharts";
-import { VideoFeed } from "@/components/VideoFeed";
 
 // Physical limits for joints (radians)
 const POSITION_LIMIT = Math.PI;
@@ -164,7 +163,7 @@ export default function DashboardPage() {
     <div className="container mx-auto p-4 space-y-4">
       <div className="grid grid-cols-12 gap-4">
         {/* Video Feed Section */}
-        <div className="col-span-8">
+        <div className="col-span-9">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -173,41 +172,34 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4">
-                {serverStatus?.cameras.video_cameras_ids.map((cameraId) => (
-                  cameraId === 1 ? (
-                    <VideoFeed
-                      key={cameraId}
-                      title={`Camera ${cameraId}`}
-                      streamPath={`/video/${cameraId}`}
-                      icon={<Video className="h-4 w-4" />}
-                    />
-                  ) : (
+                {serverStatus?.cameras.video_cameras_ids
+                  .filter(cameraId => cameraId !== 2)
+                  .map((cameraId) => (
                     <CameraStreamCard
                       key={cameraId}
                       id={cameraId}
-                      title={`Camera ${cameraId}`}
+                      title={cameraId === 1 ? "RGB Camera" : "Depth Camera"}
                       streamPath={`/video/${cameraId}`}
                       alt={`Video Stream ${cameraId}`}
                       icon={<Video className="h-4 w-4" />}
                       showRecordingControls={false}
                     />
-                  )
-                ))}
+                  ))}
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Status Panel */}
-        <div className="col-span-4">
+        <div className="col-span-3">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Settings className="h-5 w-5" /> Status
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
+            <CardContent className="space-y-2">
+              <div className="space-y-1">
                 <div className="flex justify-between items-center">
                   <Label>Gripper Status:</Label>
                   <span className="text-green-500">OPEN</span>
@@ -248,7 +240,7 @@ export default function DashboardPage() {
               {/* Joint Status Graphs */}
               <div className="space-y-4">
                 {Array.from({ length: 6 }, (_, i) => (
-                  <div key={i} className="border rounded-lg p-4">
+                  <div key={i} className="border rounded-lg p-3">
                     <h3 className="text-sm font-medium mb-2">Joint {i + 1}</h3>
                     <ChartContainer
                       config={
@@ -259,7 +251,7 @@ export default function DashboardPage() {
                             }
                           : { value: { label: "Torque" } }
                       }
-                      className="h-[180px]"
+                      className="h-[120px]"
                     >
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart
